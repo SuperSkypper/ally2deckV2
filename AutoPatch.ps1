@@ -202,12 +202,27 @@ try { & $SevenZip x -y ("-o{0}" -f $ExtractRoot) $DriverExe | Out-Null } catch {
 # -------------------------
 # 6. PATCH
 # -------------------------
-$SysRelativePath = "Packages\Drivers\Display\WT6A_INF\B420718\amdkmdag.sys"
-$path = Join-Path $ExtractRoot $SysRelativePath
+# Auto-discover the display INF folder (search anywhere under Packages\Drivers\Display)
+$DisplayBase = Join-Path $ExtractRoot "Packages\Drivers\Display"
+Write-Host "Searching for amdkmdag.sys under $DisplayBase ..." -ForegroundColor Cyan
+$sysMatches = @(Get-ChildItem -LiteralPath $DisplayBase -Recurse -Filter "amdkmdag.sys" -ErrorAction SilentlyContinue)
+if ($sysMatches.Count -eq 0) { Fail "amdkmdag.sys not found anywhere under $DisplayBase." }
+$DisplayInfFolder = $sysMatches[0].DirectoryName
+# Walk up until we find the folder that directly contains .inf files
+while ($DisplayInfFolder -and -not (Get-ChildItem -LiteralPath $DisplayInfFolder -Filter "*.inf" -ErrorAction SilentlyContinue)) {
+    $DisplayInfFolder = Split-Path $DisplayInfFolder -Parent
+}
+Write-Host "Display INF folder: $DisplayInfFolder" -ForegroundColor Green
+if ($sysMatches.Count -gt 1) {
+    Write-Host "Multiple amdkmdag.sys found - picking the largest (most likely the main driver):" -ForegroundColor Yellow
+    $sysMatches | ForEach-Object { Write-Host "  $($_.FullName) ($($_.Length) bytes)" -ForegroundColor Gray }
+    $sysMatches = @($sysMatches | Sort-Object Length -Descending)
+}
+$path = $sysMatches[0].FullName
+Write-Host "Using: $path" -ForegroundColor Green
+
 $backupPath = $path + ".bak"
 $offset = 0x56550
-
-if (-not (Test-Path -LiteralPath $path)) { Fail "Expected sys file not found at: $path. Update `$SysRelativePath` if needed." }
 
 try { Copy-Item -LiteralPath $path -Destination $backupPath -Force; Write-Host "Backup created: $backupPath" -ForegroundColor Green } catch { Fail "Failed to create backup: $($_.Exception.Message)" }
 
@@ -225,23 +240,61 @@ try { [System.IO.File]::WriteAllBytes($path, $bytes); Write-Host "Patch applied 
 # -------------------------
 # 7. INF TWEAK
 # -------------------------
-$InfPath = Join-Path $ExtractRoot "Packages\Drivers\Display\WT6A_INF\u0420842.inf"
-$BaseLine = '"%AMD163F.2%" = ati2mtag_VanGogh, PCI\VEN_1002&DEV_163F&REV_AF'
+# Auto-discover the display INF (prefer amduw23e.inf, fall back to any .inf with DEV_163F entries)
+Write-Host "Searching for display INF under $DisplayInfFolder ..." -ForegroundColor Cyan
 $SteamDeckLine = '"%AMD163F.2%" = ati2mtag_VanGogh, PCI\VEN_1002&DEV_163F&SUBSYS_01231002&REV_AE'
 
-if (Test-Path -LiteralPath $InfPath) {
-    $infLines = Get-Content -LiteralPath $InfPath
-    if ($infLines -contains $SteamDeckLine) { Write-Host "Steam Deck ID already present in INF." -ForegroundColor Yellow }
-    else {
-        $baseIndex = $infLines.IndexOf($BaseLine)
-        if ($baseIndex -lt 0) { Fail "Base 163F line not found in INF." }
-        $before = $infLines[0..$baseIndex]
-        $after  = if ($baseIndex -lt $infLines.Count - 1) { $infLines[($baseIndex + 1)..($infLines.Count - 1)] } else { @() }
-        $newLines = $before + $SteamDeckLine + $after
-        Set-Content -LiteralPath $InfPath -Value $newLines -Encoding ASCII
-        Write-Host "Inserted Steam Deck ID into INF." -ForegroundColor Green
+# Find all .inf files that reference VanGogh or DEV_163F
+$infCandidates = @(Get-ChildItem -LiteralPath $DisplayInfFolder -Filter "*.inf" -ErrorAction SilentlyContinue |
+    Where-Object { (Get-Content $_.FullName -Raw -ErrorAction SilentlyContinue) -match "ati2mtag_VanGogh|VEN_1002&DEV_163F" })
+if ($infCandidates.Count -eq 0) { Fail "No compatible display INF found under $DisplayInfFolder." }
+
+# Prefer amduw23e.inf if present, otherwise use first match
+$preferred = $infCandidates | Where-Object { $_.Name -eq "amduw23e.inf" } | Select-Object -First 1
+$InfFile = if ($preferred) { $preferred } else { $infCandidates[0] }
+$InfPath = $InfFile.FullName
+Write-Host "Using INF: $InfPath" -ForegroundColor Green
+
+$infLines = Get-Content -LiteralPath $InfPath
+if ($infLines -contains $SteamDeckLine) {
+    Write-Host "Steam Deck ID already present in INF." -ForegroundColor Yellow
+} else {
+    # Find the first VEN_1002&DEV_163F VanGogh line to use as anchor
+    $baseIndex = -1
+    for ($i = 0; $i -lt $infLines.Count; $i++) {
+        if ($infLines[$i] -match [regex]::Escape("ati2mtag_VanGogh") -and $infLines[$i] -match "VEN_1002&DEV_163F") {
+            $baseIndex = $i; break
+        }
     }
-} else { Write-Host "INF not found at expected path: $InfPath (skipping INF tweak)." -ForegroundColor Yellow }
+    if ($baseIndex -lt 0) { Fail "No VEN_1002&DEV_163F VanGogh entry found in $InfPath." }
+    Write-Host "Anchor line found at index ${baseIndex}: $($infLines[$baseIndex])" -ForegroundColor Gray
+    $before = $infLines[0..$baseIndex]
+    $after  = if ($baseIndex -lt $infLines.Count - 1) { $infLines[($baseIndex + 1)..($infLines.Count - 1)] } else { @() }
+    $newLines = $before + $SteamDeckLine + $after
+    Set-Content -LiteralPath $InfPath -Value $newLines -Encoding ASCII
+    Write-Host "Inserted Steam Deck hardware ID into INF." -ForegroundColor Green
+}
+
+# Add AMD163F.2 string entry if missing (required for device name resolution)
+$infLines = Get-Content -LiteralPath $InfPath
+$StringKey = 'AMD163F.2 = "AMD Radeon(TM) Graphics"'
+$StringAnchor = 'AMD163F.1 = "AMD Radeon(TM) Graphics"'
+if ($infLines -contains $StringKey) {
+    Write-Host "AMD163F.2 string already present." -ForegroundColor Yellow
+} else {
+    $strIndex = -1
+    for ($i = 0; $i -lt $infLines.Count; $i++) {
+        if ($infLines[$i] -match [regex]::Escape("AMD163F.1")) { $strIndex = $i; break }
+    }
+    if ($strIndex -lt 0) { Write-Host "Warning: AMD163F.1 string anchor not found, skipping string insert." -ForegroundColor Yellow }
+    else {
+        $sBefore = $infLines[0..$strIndex]
+        $sAfter  = if ($strIndex -lt $infLines.Count - 1) { $infLines[($strIndex + 1)..($infLines.Count - 1)] } else { @() }
+        $newLines = $sBefore + $StringKey + $sAfter
+        Set-Content -LiteralPath $InfPath -Value $newLines -Encoding ASCII
+        Write-Host "Inserted AMD163F.2 string entry into INF." -ForegroundColor Green
+    }
+}
 
 # -------------------------
 # 8. CERTIFICATE CREATION AND SIGNING
@@ -250,10 +303,20 @@ Write-Host "Creating or reusing test certificate..." -ForegroundColor Cyan
 $CertName = "AMD Driver Signing Certificate"
 $CertPassword = "DriverSign123!"
 
-# Driver folder is script-relative
-$DriverFolder = Join-Path $ExtractRoot "Packages\Drivers\Display\WT6A_INF"
-$SysFile = Join-Path $DriverFolder "B420718\amdkmdag.sys"
-$CatFile = Join-Path $DriverFolder "u0420842.cat"
+# Use paths already discovered in sections 6 and 7
+$DriverFolder = $DisplayInfFolder
+$SysFile = $path
+
+# Auto-discover the matching .cat (same base name as INF, fall back to first .cat in folder)
+$catBaseName = [System.IO.Path]::GetFileNameWithoutExtension($InfPath) + ".cat"
+$catPreferred = Join-Path $DriverFolder $catBaseName
+if (Test-Path -LiteralPath $catPreferred) {
+    $CatFile = $catPreferred
+} else {
+    $catFallback = Get-ChildItem -LiteralPath $DriverFolder -Filter "*.cat" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $CatFile = if ($catFallback) { $catFallback.FullName } else { $catPreferred }
+}
+Write-Host "Using CAT: $CatFile" -ForegroundColor Green
 
 # Export certificate artifacts next to the script (not inside DRIVERS)
 $CertExportPath   = Join-Path $ScriptDir 'DriverCert.pfx'
@@ -269,6 +332,7 @@ if (-not $existing) {
         -KeyUsage DigitalSignature `
         -KeyAlgorithm RSA `
         -KeyLength 2048 `
+        -KeyExportPolicy Exportable `
         -CertStoreLocation "Cert:\CurrentUser\My" `
         -NotAfter (Get-Date).AddYears(5)
     Write-Host "Certificate created" -ForegroundColor Green
@@ -358,7 +422,7 @@ Write-Host "Device Manager -> AMD Radeon Graphics" -ForegroundColor Cyan
 Write-Host "Right-click -> Update driver" -ForegroundColor Cyan
 Write-Host "Browse my computer -> Let me pick" -ForegroundColor Cyan
 Write-Host "Have Disk -> Browse to:" -ForegroundColor Cyan
-Write-Host "$DriverFolder\u0420842.inf" -ForegroundColor Green
+Write-Host $InfPath -ForegroundColor Green
 Write-Host "Reboot" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Press any key to exit..." -ForegroundColor Yellow
