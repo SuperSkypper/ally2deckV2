@@ -7,6 +7,7 @@ The installation instructions remain the same.
 I tested it with two ROG Xbox Ally drivers:
 
 V32.0.21043.3002 - the GPU video encoder didn’t work in OBS.
+
 V32.0.21025.27003 - the GPU video encoder worked in OBS.
 
 I also tried several ways to get this working with Secure Boot, but unfortunately I couldn’t.
