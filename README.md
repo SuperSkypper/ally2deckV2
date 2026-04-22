@@ -10,8 +10,19 @@ V32.0.21043.3002 - the GPU video encoder didn’t work in OBS.
 
 V32.0.21025.27003 - the GPU video encoder worked in OBS.
 
-I also tried several ways to get this working with Secure Boot, but unfortunately I couldn’t.
+I also tried several ways to get this working with Secure Boot, but unfortunately I couldn’t. So it doesnt work with Valorant, Call of Duty, Fortnite and another games that uses anticheat.
 
+# How To Use:
+1 - Download AutoPatch.ps1 from this repository.
+2 - Download AMD Graphics Driver from the (Xbox ROG Ally Driver Page)[https://rog.asus.com/gaming-handhelds/rog-ally/rog-xbox-ally-2025/helpdesk_download/].
+3 - Place both files in the same folder and rename the driver to AMDDriver.exe.
+4 - Right-click AutoPatch.ps1: Run with Powershell.
+5 - Reboot the Deck to enter in driver test mode.
+6 - Install Driver Manually
+  - Open Device Manager > Display Drivers > Right Click > Update Driver > Browse my computer > Let me pick > Have disk > Browse > Go to inside the driver folder Packages/Drivers/Display/WT6A_iNF > Select u0420842.inf
+7 - Restart
+
+I cannot provide the driver as it is AMD's proprietary code. But with these instructions, you'll be able to do it yourself.
 --- 
 
 This script will extract, patch and sign the ROG XBOX ALLY AMD Graphics Driver so that it works on the Steam Deck.
