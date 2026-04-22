@@ -14,7 +14,7 @@ I also tried several ways to get this working with Secure Boot, but unfortunatel
 
 # How To Use:
 1 - Download AutoPatch.ps1 from this repository.
-2 - Download AMD Graphics Driver from the (Xbox ROG Ally Driver Page)[https://rog.asus.com/gaming-handhelds/rog-ally/rog-xbox-ally-2025/helpdesk_download/].
+2 - Download AMD Graphics Driver from the [Xbox ROG Ally Driver Page](https://rog.asus.com/gaming-handhelds/rog-ally/rog-xbox-ally-2025/helpdesk_download/).
 3 - Place both files in the same folder and rename the driver to AMDDriver.exe.
 4 - Right-click AutoPatch.ps1: Run with Powershell.
 5 - Reboot the Deck to enter in driver test mode.
