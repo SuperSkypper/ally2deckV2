@@ -1,6 +1,6 @@
 
 # Ally2Deck V2
-The original script from [4perture](https://github.com/4PERTURE/ally2deck) wasn’t working for me, so I used Claude to modify it. As far as I understood, the script had fixed names for the driver files, but it seems Asus changed these names, which broke the script, that’s what I fixed. I also tried to make it work even if the file names are different.
+The original script from [4perture](https://github.com/4PERTURE/ally2deck) wasn’t working for me, so I used Claude and ChatGPT to modify it. As far as I understood, the script had fixed names for the driver files, but it seems Asus changed these names, which broke the script, that’s what I fixed. I also tried to make it work even if the file names are different.
 
 The installation instructions remain the same.
 
